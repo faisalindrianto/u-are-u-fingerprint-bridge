@@ -18,4 +18,43 @@
     </Reference>
   </ItemGroup>
 
+  <!-- Native DLLs must ship next to the exe — they cannot be bundled into SingleFile -->
+  <ItemGroup>
+    <Content Include="libs\dpfj.dll">
+      <Link>dpfj.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="libs\dpfr6.dll">
+      <Link>dpfr6.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="libs\dpfr7.dll">
+      <Link>dpfr7.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="libs\dpfpdd.dll">
+      <Link>dpfpdd.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="libs\dpfpdd_4k.dll">
+      <Link>dpfpdd_4k.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="libs\dpfpdd_ptapi.dll">
+      <Link>dpfpdd_ptapi.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="libs\dpfpdd5000.dll">
+      <Link>dpfpdd5000.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
