@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fingerprint Bridge Tester</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #111; color: #eee; padding: 24px; }
+    h1 { font-size: 18px; margin-bottom: 4px; color: #fff; }
+    p.subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+
+    #status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 20px;
+      background: #333; color: #aaa;
+    }
+    #status.connected    { background: #1a3a1a; color: #4caf50; }
+    #status.disconnected { background: #3a1a1a; color: #f44336; }
+
+    .section { margin-bottom: 24px; }
+    .section h2 { font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #222; padding-bottom: 6px; }
+
+    .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    button {
+      padding: 9px 20px; font-size: 13px; font-family: monospace;
+      border: none; border-radius: 4px; cursor: pointer;
+      background: #2a2a2a; color: #ccc; transition: background 0.15s;
+    }
+    button:hover:not(:disabled) { background: #383838; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-enroll  { background: #1a3a1a; color: #81c784; }
+    #btn-enroll:hover:not(:disabled)  { background: #1e4a1e; }
+    #btn-verify  { background: #1a2e3a; color: #64b5f6; }
+    #btn-verify:hover:not(:disabled)  { background: #1e3a4a; }
+    #btn-capture { background: #2a2a2a; color: #bbb; }
+
+    #progress-label { font-size: 12px; color: #aaa; margin-bottom: 6px; display: none; }
+    #progress-bar { display: none; margin-bottom: 14px; background: #222; border-radius: 4px; height: 7px; overflow: hidden; }
+    #progress-fill { height: 100%; width: 0%; background: #81c784; transition: width 0.3s; }
+
+    #log {
+      background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
+      padding: 12px; height: 300px; overflow-y: auto;
+      font-size: 12px; line-height: 1.7;
+    }
+    .log-info    { color: #666; }
+    .log-send    { color: #64b5f6; }
+    .log-recv    { color: #81c784; }
+    .log-error   { color: #f44336; }
+    .log-match   { color: #ffeb3b; font-weight: bold; }
+    .log-nomatch { color: #f44336; font-weight: bold; }
+
+    #enrolled-fmd-box {
+      display: none; margin-top: 12px;
+      background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 10px;
+    }
+    #enrolled-fmd-box .label { font-size: 11px; color: #666; margin-bottom: 4px; }
+    #enrolled-fmd-value { font-size: 10px; color: #555; word-break: break-all; max-height: 48px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>Fingerprint Bridge Tester</h1>
+  <p class="subtitle">Run bridge as Administrator first, then open this page.</p>
+
+  <div id="status" class="disconnected">● Disconnected</div>
+
+  <!-- ENROLL -->
+  <div class="section">
+    <h2>Step 1 — Enroll</h2>
+    <div class="buttons">
+      <button id="btn-enroll" disabled>Enroll (4 scans)</button>
+      <button id="btn-clear-enroll" disabled>Clear enrolled FMD</button>
+    </div>
+    <div id="progress-label"></div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="enrolled-fmd-box">
+      <div class="label">Stored enrollment FMD (simulates what Laravel would return):</div>
+      <div id="enrolled-fmd-value"></div>
+    </div>
+  </div>
+
+  <!-- VERIFY -->
+  <div class="section">
+    <h2>Step 2 — Verify</h2>
+    <p style="font-size:12px;color:#555;margin-bottom:10px;">
+      Enroll first, then scan again. The bridge compares live scan vs stored FMD and returns match/no-match.
+    </p>
+    <div class="buttons">
+      <button id="btn-verify" disabled>Verify finger</button>
+    </div>
+  </div>
+
+  <!-- RAW CAPTURE -->
+  <div class="section">
+    <h2>Raw Capture (debug)</h2>
+    <div class="buttons">
+      <button id="btn-capture" disabled>Capture only (no compare)</button>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="section">
+    <h2>Log</h2>
+    <div class="buttons">
+      <button id="btn-clear-log">Clear log</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <script>
+    const WS_URL = 'ws://localhost:9002';
+    const ENROLL_TOTAL = 4;
+
+    const statusEl       = document.getElementById('status');
+    const btnEnroll      = document.getElementById('btn-enroll');
+    const btnClearEnroll = document.getElementById('btn-clear-enroll');
+    const btnVerify      = document.getElementById('btn-verify');
+    const btnCapture     = document.getElementById('btn-capture');
+    const btnClearLog    = document.getElementById('btn-clear-log');
+    const logEl          = document.getElementById('log');
+    const progressBar    = document.getElementById('progress-bar');
+    const progressFill   = document.getElementById('progress-fill');
+    const progressLabel  = document.getElementById('progress-label');
+    const enrolledBox    = document.getElementById('enrolled-fmd-box');
+    const enrolledValue  = document.getElementById('enrolled-fmd-value');
+
+    let ws = null;
+    let busy = false;
+    let enrolledFmd = null;   // stored after enrollment, used for VERIFY
+
+    function log(msg, cls = 'log-info') {
+      const line = document.createElement('div');
+      line.className = cls;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setBusy(b) {
+      busy = b;
+      const connected = !!ws;
+      btnEnroll.disabled  = b || !connected;
+      btnCapture.disabled = b || !connected;
+      btnVerify.disabled  = b || !connected || !enrolledFmd;
+      btnClearEnroll.disabled = !enrolledFmd;
+    }
+
+    function setProgress(step, total) {
+      if (step === 0) {
+        progressBar.style.display = 'none';
+        progressLabel.style.display = 'none';
+      } else {
+        progressBar.style.display = 'block';
+        progressLabel.style.display = 'block';
+        progressLabel.textContent = `Enrolling: ${step} of ${total} scans captured`;
+        progressFill.style.width = `${(step / total) * 100}%`;
+      }
+    }
+
+    function setEnrolledFmd(fmd) {
+      enrolledFmd = fmd;
+      if (fmd) {
+        enrolledBox.style.display = 'block';
+        enrolledValue.textContent = fmd;
+      } else {
+        enrolledBox.style.display = 'none';
+        enrolledValue.textContent = '';
+      }
+      setBusy(false);
+    }
+
+    function connect() {
+      log('Connecting to ' + WS_URL + '...');
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        statusEl.textContent = '● Connected';
+        statusEl.className = 'connected';
+        log('Connected to bridge');
+        setBusy(false);
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = '● Disconnected';
+        statusEl.className = 'disconnected';
+        log('Disconnected. Retrying in 3s...', 'log-error');
+        btnEnroll.disabled = btnCapture.disabled = btnVerify.disabled = true;
+        ws = null;
+        setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => log('WebSocket error', 'log-error');
+
+      ws.onmessage = (event) => {
+        log('← ' + event.data, 'log-recv');
+        const msg = JSON.parse(event.data);
+
+        switch (msg.type) {
+          case 'FMD_READY':
+            setBusy(false);
+            log('Raw FMD captured (' + msg.data.length + ' chars). Use Enroll to store it for comparison.');
+            break;
+
+          case 'ENROLL_READY':
+            setProgress(0, 0);
+            setEnrolledFmd(msg.data);
+            log('Enrolled! FMD stored (' + msg.data.length + ' chars). Now click Verify.', 'log-recv');
+            break;
+
+          case 'SCAN_PROGRESS':
+            setProgress(msg.step, msg.total);
+            log('Scan ' + msg.step + '/' + msg.total + ' captured — lift and place again');
+            break;
+
+          case 'VERIFY_RESULT':
+            setBusy(false);
+            if (msg.match) {
+              log('✔ MATCH — same finger (score=' + msg.score + ')', 'log-match');
+            } else {
+              log('✘ NO MATCH — different finger or poor scan (score=' + msg.score + ')', 'log-nomatch');
+            }
+            break;
+
+          case 'ERROR':
+            setBusy(false);
+            setProgress(0, 0);
+            log('ERROR: ' + msg.message, 'log-error');
+            break;
+        }
+      };
+    }
+
+    btnEnroll.addEventListener('click', () => {
+      if (!ws || busy) return;
+      setBusy(true);
+      setProgress(0, ENROLL_TOTAL);
+      setEnrolledFmd(null);
+      const payload = JSON.stringify({ type: 'ENROLL' });
+      ws.send(payload);
+      log('→ ' + payload, 'log-send');
+      log('Place your finger on the scanner — lift and re-place between each scan');
+    });
+
+    btnVerify.addEventListener('click', () => {
+      if (!ws || busy || !enrolledFmd) return;
+      setBusy(true);
+      const payload = JSON.stringify({ type: 'VERIFY', enrolledFmd });
+      ws.send(payload);
+      log('→ VERIFY (sending stored FMD)', 'log-send');
+      log('Place your finger on the scanner...');
+    });
+
+    btnCapture.addEventListener('click', () => {
+      if (!ws || busy) return;
+      setBusy(true);
+      const payload = JSON.stringify({ type: 'CAPTURE' });
+      ws.send(payload);
+      log('→ ' + payload, 'log-send');
+      log('Place your finger on the scanner...');
+    });
+
+    btnClearEnroll.addEventListener('click', () => {
+      setEnrolledFmd(null);
+      log('Enrollment cleared.');
+    });
+
+    btnClearLog.addEventListener('click', () => { logEl.innerHTML = ''; });
+
+    connect();
+  </script>
+</body>
+</html>

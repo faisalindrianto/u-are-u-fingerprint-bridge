@@ -1,0 +1,20 @@
+# Claude
+.claude/
+
+# .NET build output
+bin/
+obj/
+
+# User-specific VS/Rider files
+*.user
+*.suo
+.vs/
+.idea/
+
+# Publish output
+publish/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
