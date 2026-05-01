@@ -1,6 +1,9 @@
 # Claude
 .claude/
 
+# Driver package (distribute separately, not via git)
+driver/
+
 # .NET build output
 bin/
 obj/

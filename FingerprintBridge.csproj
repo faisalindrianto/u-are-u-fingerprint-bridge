@@ -24,37 +24,59 @@
       <Link>dpfj.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="libs\dpfr6.dll">
       <Link>dpfr6.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="libs\dpfr7.dll">
       <Link>dpfr7.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="libs\dpfpdd.dll">
       <Link>dpfpdd.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="libs\dpfpdd_4k.dll">
       <Link>dpfpdd_4k.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="libs\dpfpdd_ptapi.dll">
       <Link>dpfpdd_ptapi.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="libs\dpfpdd5000.dll">
       <Link>dpfpdd5000.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
   </ItemGroup>
+
+  <!-- Explicit fallback: copy native DLLs into publish folder after publish -->
+  <Target Name="CopyNativeDllsToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_NativeDlls Include="$(MSBuildProjectDirectory)\libs\dpfj.dll;
+                             $(MSBuildProjectDirectory)\libs\dpfr6.dll;
+                             $(MSBuildProjectDirectory)\libs\dpfr7.dll;
+                             $(MSBuildProjectDirectory)\libs\dpfpdd.dll;
+                             $(MSBuildProjectDirectory)\libs\dpfpdd_4k.dll;
+                             $(MSBuildProjectDirectory)\libs\dpfpdd_ptapi.dll;
+                             $(MSBuildProjectDirectory)\libs\dpfpdd5000.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NativeDlls)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Message Text="[*] Copied native DLLs to $(PublishDir)" Importance="high" />
+  </Target>
 
 </Project>
