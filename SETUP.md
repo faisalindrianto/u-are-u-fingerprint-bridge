@@ -6,168 +6,206 @@ A small Windows app (`FingerprintBridge.exe`) that sits between the **Buku Nilai
 
 ---
 
-## Prerequisites
+## Step 1 — Install the DigitalPersona Driver (first time only)
 
-| Item | Notes |
-|------|-------|
-| Windows 10/11 x64 | Required |
-| U.are.U 4500 scanner | Plugged in via USB |
-| DigitalPersona U.are.U SDK | Installed (provides `dpfj.dll`, `dpfpdd.dll`) |
-| HID USB driver | Installed (bundled with the SDK installer) |
+The scanner needs DigitalPersona's own USB driver (`dpfpusbm`). Windows sometimes auto-installs the wrong one (WBF/`WUDFRd`), which blocks the bridge from accessing the scanner.
 
----
+**Install the RTE (Runtime Environment) — not the SDK:**
 
-## Step 1 — Install the DigitalPersona SDK
+```
+UareUWin300_20170223.1115_2\RTE\x64\setup.exe
+```
 
-1. Run the SDK installer (`install-driver.exe` or the full SDK setup).
-2. Accept defaults. It will install to `C:\Program Files\DigitalPersona\`.
-3. It registers two things Windows needs:
-   - USB driver for the scanner (HID Biometric device)
-   - Two native DLLs in `C:\Windows\System32\`: `dpfj.dll` and `dpfpdd.dll`
+> If you get "incompatible products installed" during RTE setup, it means the full SDK was already installed — that's fine, the SDK includes the driver. Just reboot and skip to Step 2.
 
-**Verify:** Open Device Manager → look for "U.are.U 4500 Fingerprint Reader" under **Biometric devices**. Status should be "Device is working properly".
+**After install, reboot the laptop.**
+
+**Verify:** Open Device Manager → the scanner should appear under **Biometric devices** as "U.are.U 4500 Fingerprint Reader" with no warning icon.
 
 ---
 
 ## Step 2 — Copy the Bridge Files
 
-Copy this folder to the client PC. The minimum required files:
+Build the self-contained exe on your dev machine:
+```powershell
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+```
+Output: `bin\Release\net8.0-windows\win-x64\publish\`
+
+Copy these files to dosen's PC (skip `FingerprintBridge.pdb`):
 
 ```
-FingerprintBridge\
-├── FingerprintBridge.exe      ← the bridge (self-contained, no .NET needed)
-├── libs\
-│   └── DPUruNet.dll           ← DigitalPersona managed SDK wrapper
-└── index.html                 ← test page (optional, for verification)
+📦 copy to dosen's PC
+├── FingerprintBridge.exe   ← self-contained, no .NET install needed
+├── dpfj.dll
+├── dpfpdd.dll
+├── dpfpdd_4k.dll
+├── dpfpdd5000.dll
+├── dpfpdd_ptapi.dll
+├── dpfr6.dll
+├── dpfr7.dll
+└── index.html              ← test page
 ```
 
-> **Build the self-contained exe first** (on your dev machine):
-> ```powershell
-> dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-> ```
-> Output goes to `bin\Release\net8.0-windows\win-x64\publish\`.
+All files must stay in the same folder.
 
 ---
 
 ## Step 3 — Run as Administrator
 
-The bridge needs to temporarily stop two Windows services that monopolize the scanner:
-- **WbioSrvc** (Windows Biometric Service — part of Windows Hello)
-- **DpHost** (DigitalPersona Authentication Service)
+The bridge must stop two Windows services that hold the scanner (`WbioSrvc`, `DpHost`). This requires admin rights.
 
-It does this automatically on startup and restores them when you close it.
-
-**Because of this, the bridge must always be run as Administrator:**
-
-1. Right-click `FingerprintBridge.exe`
-2. Select **"Run as administrator"**
-3. Allow the UAC prompt
+**Right-click `FingerprintBridge.exe` → Run as administrator**
 
 You should see:
 ```
-[*] Stopping competing services...
 [*] Stopped service: WbioSrvc
 [*] Stopped service: DpHost
 [*] Fingerprint bridge running on ws://localhost:9002
-[*] Press ENTER to stop...
 ```
+
+> When the bridge closes, it automatically restarts those services so Windows Hello works again.
 
 ---
 
 ## Step 4 — Verify with the Test Page
 
-1. Open `index.html` in a browser (double-click it, or drag into Chrome/Edge).
-2. The status indicator should turn **green** ("Connected").
-3. Click **Capture (verify)** → place your finger → you should see a base64 FMD appear.
-4. Click **Enroll (4 scans)** → place your finger 4 times → you should see "Enrollment FMD received".
-
-If both work, the bridge is correctly installed.
+1. Open `index.html` in Chrome or Edge
+2. Status turns **green** ("Connected")
+3. Click **Enroll (4 scans)** → scan finger 4 times
+4. Click **Verify finger** → scan again → should show ✔ MATCH
 
 ---
 
-## Step 5 — Auto-start on Windows Login (Optional)
+## Step 5 — Auto-start on Login (Optional)
 
-So the dosen doesn't have to manually start the bridge:
+So dosen doesn't have to manually run it every time:
 
-1. Create a shortcut to `FingerprintBridge.exe`.
-2. Right-click the shortcut → **Properties** → **Advanced** → check **"Run as administrator"**.
-3. Press `Win + R`, type `shell:startup`, press Enter.
-4. Move the shortcut into that Startup folder.
+```powershell
+schtasks /create /tn "FingerprintBridge" /tr "C:\path\to\FingerprintBridge.exe" /sc onlogon /rl highest /f
+```
 
-Windows will prompt UAC once at each login.
+Replace `C:\path\to\` with the actual folder. Run this command once as Administrator. From then on, the bridge starts automatically on every login with no UAC prompt.
+
+To remove it:
+```powershell
+schtasks /delete /tn "FingerprintBridge" /f
+```
 
 ---
 
 ## Troubleshooting
 
-### "No fingerprint reader found"
-- Check Device Manager: is the U.are.U 4500 listed under Biometric devices?
-- If it shows a yellow warning icon, reinstall the driver.
-- Try a different USB port.
-
-### "Failed to open reader: DP_DEVICE_FAILURE"
-- The bridge is **not running as Administrator** — the service stop failed silently.
-- Solution: right-click → "Run as administrator".
-
-### "Connected" in test page but Capture fails immediately
-- Same as above — services weren't stopped.
-- Check the console window: did it print `[*] Stopped service: WbioSrvc`?
-
-### Browser shows "Disconnected" / keeps retrying
-- The bridge isn't running, or it crashed.
-- Check the console window for error messages.
-- Make sure port 9002 isn't blocked by a firewall.
-
-### Windows Hello fingerprint login stops working while bridge is running
-- Expected. The bridge stops WbioSrvc temporarily.
-- When you close the bridge (press ENTER), WbioSrvc restarts and Windows Hello works again.
+### Step 0 — Run DIAG first
+When something doesn't work, always start here:
+1. Run `FingerprintBridge.exe` as Administrator
+2. Open `index.html` in a browser → wait for green "Connected"
+3. Click **Run DIAG**
+4. Read the output — it tells you exactly what's wrong
 
 ---
 
-## Architecture Reference
+### "No fingerprint reader found" — WBF driver (most common on fresh laptops)
+
+**Symptom in DIAG:**
+```
+Service: WUDFRd   ← wrong driver
+dpfpusbm:         NOT FOUND
+Count: 0
+```
+
+Windows auto-installed the wrong driver. Fix it:
+
+**Option A — Install RTE first (clean laptop, no SDK yet):**
+```
+UareUWin300_20170223.1115_2\RTE\x64\setup.exe
+```
+Reboot after install. Done.
+
+**Option B — SDK already installed (RTE gives "incompatible products" error):**
+
+The SDK installs the driver files but doesn't switch the device automatically. Force it via Device Manager:
+
+1. Open **Device Manager** (right-click Start → Device Manager)
+2. Find **"U.are.U 4500 Fingerprint Reader"** under **Biometric devices**
+3. Right-click → **Update driver**
+4. **Browse my computer for drivers**
+5. **Let me pick from a list of available drivers on my computer**
+6. Select the **DigitalPersona** entry (not the WBF one)
+7. Click Next → install
+8. Unplug and replug the USB scanner
+
+Run DIAG again — should now show `dpfpusbm` and `Count: 1`.
+
+---
+
+### "Failed to open reader: DP_DEVICE_FAILURE"
+
+Bridge is not running as Administrator — it couldn't stop `WbioSrvc`.
+
+**Fix:** Right-click `FingerprintBridge.exe` → **Run as administrator**
+
+**Confirm it worked** — console should show:
+```
+[*] Stopped service: WbioSrvc
+[*] Stopped service: DpHost
+```
+
+---
+
+### "No fingerprint reader found" — scanner not plugged in
+Check the USB cable. Try a different USB port. Check Device Manager for any yellow warning icons.
+
+### DIAG shows `DPUruNet.dll ✗ [app dir]`
+Normal — `DPUruNet.dll` is bundled inside the single-file exe. Ignore this line.
+
+### "Disconnected" / browser keeps retrying
+Bridge isn't running or crashed. Check the console window for error messages.
+
+### Windows Hello stops working while bridge is running
+Expected — bridge pauses `WbioSrvc`. Restores it automatically when bridge exits.
+
+---
+
+## Architecture
 
 ```
 Nuxt Frontend (browser)
     ↕ WebSocket ws://localhost:9002
-FingerprintBridge.exe (running on dosen's PC, as Admin)
-    ↕ DPUruNet.dll → dpfpdd.dll (USB)
+FingerprintBridge.exe (dosen's PC, run as Admin)
+    ↕ DPUruNet.dll → dpfpdd.dll → dpfpusbm driver
 U.are.U 4500 Scanner
     ↕ HTTP POST (base64 FMD)
-Laravel Backend (stores templates, does matching)
+Laravel Backend
 ```
 
-### WebSocket Protocol
+## WebSocket Protocol
 
 **Frontend → Bridge:**
 ```json
 { "type": "CAPTURE" }
 { "type": "ENROLL" }
+{ "type": "VERIFY", "enrolledFmd": "<base64>" }
+{ "type": "DIAG" }
 ```
 
 **Bridge → Frontend:**
 ```json
-{ "type": "FMD_READY",      "data": "<base64 FMD>" }
-{ "type": "ENROLL_READY",   "data": "<base64 FMD>" }
-{ "type": "SCAN_PROGRESS",  "step": 1, "total": 4  }
-{ "type": "VERIFY_RESULT",  "match": true, "score": 1234 }
-{ "type": "ERROR",          "message": "<reason>"  }
+{ "type": "FMD_READY",     "data": "<base64 FMD>" }
+{ "type": "ENROLL_READY",  "data": "<base64 FMD>" }
+{ "type": "SCAN_PROGRESS", "step": 1, "total": 4 }
+{ "type": "VERIFY_RESULT", "match": true, "score": 1234 }
+{ "type": "DIAG_REPORT",   "report": "..." }
+{ "type": "ERROR",         "message": "<reason>" }
 ```
 
-### Command details
+**Commands:**
+- **CAPTURE** — scans one finger, returns raw FMD. For debugging.
+- **ENROLL** — scans 4 fingers, returns enrollment template to store in Laravel.
+- **VERIFY** — receives stored FMD from frontend, scans live finger, compares, returns match/no-match.
+- **DIAG** — prints full system diagnostics (admin status, driver, DLLs, reader list).
 
-- **CAPTURE** → scans one finger, returns raw `FMD_READY`. Useful for debugging.
-- **ENROLL** → scans 4 fingers, sends `SCAN_PROGRESS` after each, returns `ENROLL_READY` with the enrollment template to store in Laravel.
-- **VERIFY** → receives the stored enrollment FMD from the frontend (fetched from Laravel), scans a live finger, compares them, returns `VERIFY_RESULT`.
+**Why comparison runs in the bridge (not Laravel):**
+The `dpfj.dll` comparison algorithm is a native Windows DLL — PHP can't call it. So the frontend fetches the stored FMD from Laravel, sends it to the bridge, and the bridge does the comparison locally.
 
-### Why comparison happens in the bridge (not Laravel)
-
-The comparison algorithm is in `dpfj.dll` — a native Windows DLL from DigitalPersona. PHP (Laravel) cannot call it. So the flow is:
-
-1. Frontend fetches stored FMD from Laravel: `GET /api/fingerprint/enrolled-fmd`
-2. Frontend sends `{ "type": "VERIFY", "enrolledFmd": "<base64>" }` to bridge
-3. Bridge captures live scan, compares, returns `{ "type": "VERIFY_RESULT", "match": true/false, "score": N }`
-4. Frontend sends result to Laravel or unlocks grading form directly
-
-### Match threshold
-
-Score `< 21474` → match (1-in-100,000 false accept rate — meaning a random person's finger has a 0.001% chance of passing).
+**Match threshold:** score `< 21474` = match (1-in-100,000 false accept rate).
